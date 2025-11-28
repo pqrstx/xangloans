@@ -14,7 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      loan_applications: {
+        Row: {
+          application_fee: number
+          created_at: string
+          first_name: string
+          id: string
+          id_number: string
+          interest_rate: number
+          loan_amount: number
+          loan_type: string
+          monthly_earnings: string
+          mpesa_checkout_request_id: string | null
+          mpesa_transaction_id: string | null
+          phone_number: string
+          repayment_period: number
+          second_name: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          application_fee?: number
+          created_at?: string
+          first_name: string
+          id?: string
+          id_number: string
+          interest_rate?: number
+          loan_amount: number
+          loan_type: string
+          monthly_earnings: string
+          mpesa_checkout_request_id?: string | null
+          mpesa_transaction_id?: string | null
+          phone_number: string
+          repayment_period?: number
+          second_name: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          application_fee?: number
+          created_at?: string
+          first_name?: string
+          id?: string
+          id_number?: string
+          interest_rate?: number
+          loan_amount?: number
+          loan_type?: string
+          monthly_earnings?: string
+          mpesa_checkout_request_id?: string | null
+          mpesa_transaction_id?: string | null
+          phone_number?: string
+          repayment_period?: number
+          second_name?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
