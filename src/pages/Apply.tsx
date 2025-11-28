@@ -9,52 +9,146 @@ import { CheckCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 import type { LoanApplication } from "@/types";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function Apply() {
   const [currentStep, setCurrentStep] = useState(1);
   const [loanData, setLoanData] = useState<Partial<LoanApplication>>({});
   const { toast } = useToast();
 
-  const handleFormSubmit = (data: Partial<LoanApplication>) => {
-    setLoanData({ ...loanData, ...data });
+  const handleFormSubmit = async (data: Partial<LoanApplication>) => {
+    const fullData = { ...loanData, ...data };
+    setLoanData(fullData);
     
     // Save to localStorage
-    localStorage.setItem("loanApplication", JSON.stringify({ ...loanData, ...data }));
+    localStorage.setItem("loanApplication", JSON.stringify(fullData));
     
     // Move to eligibility check step
     setCurrentStep(2);
     
-    // Simulate eligibility check
-    setTimeout(() => {
-      setCurrentStep(3);
+    try {
+      // Create loan application in database
+      const { data: loanApp, error } = await supabase
+        .from("loan_applications")
+        .insert({
+          first_name: fullData.firstName!,
+          second_name: fullData.secondName!,
+          id_number: fullData.idNumber!,
+          phone_number: fullData.phoneNumber!,
+          monthly_earnings: fullData.monthlyEarnings!,
+          loan_type: fullData.loanType!,
+          loan_amount: fullData.loanAmount!,
+          application_fee: 230,
+          interest_rate: 10,
+          repayment_period: 30,
+          status: "pending",
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Database error:", error);
+        throw error;
+      }
+
+      // Store the application ID
+      setLoanData({ ...fullData, id: loanApp.id });
+      
+      // Simulate eligibility check
+      setTimeout(() => {
+        setCurrentStep(3);
+        toast({
+          title: "Loan Approved!",
+          description: "You're eligible for the loan. Proceed to payment.",
+        });
+      }, 2000);
+    } catch (error) {
+      console.error("Error creating loan application:", error);
       toast({
-        title: "Loan Approved!",
-        description: "You're eligible for the loan. Proceed to payment.",
+        title: "Error",
+        description: "Failed to process your application. Please try again.",
+        variant: "destructive",
       });
-    }, 2000);
+      setCurrentStep(1);
+    }
   };
 
   const handlePayment = async (phoneNumber: string) => {
     try {
+      if (!loanData.id) {
+        throw new Error("Loan application ID not found");
+      }
+
       toast({
         title: "Processing Payment",
         description: "Please check your phone for the M-Pesa prompt...",
       });
 
-      // Here you would integrate with M-Pesa API through Supabase function
-      // For now, simulate success
+      // Call M-Pesa payment edge function
+      const { data, error } = await supabase.functions.invoke("mpesa-payment", {
+        body: {
+          phoneNumber: phoneNumber,
+          amount: 230, // Application fee
+          loanApplicationId: loanData.id,
+        },
+      });
+
+      if (error) {
+        console.error("Payment error:", error);
+        throw error;
+      }
+
+      if (!data.success) {
+        throw new Error(data.error || "Payment failed");
+      }
+
+      console.log("Payment initiated:", data);
+
+      toast({
+        title: "Payment Initiated",
+        description: "Enter your M-Pesa PIN to complete the payment.",
+      });
+
+      // Poll for payment status
+      const pollInterval = setInterval(async () => {
+        const { data: loanApp, error: fetchError } = await supabase
+          .from("loan_applications")
+          .select("status")
+          .eq("id", loanData.id)
+          .single();
+
+        if (fetchError) {
+          console.error("Error fetching loan status:", fetchError);
+          return;
+        }
+
+        if (loanApp.status === "paid") {
+          clearInterval(pollInterval);
+          setCurrentStep(4);
+          localStorage.removeItem("loanApplication");
+          toast({
+            title: "Payment Successful!",
+            description: "Your loan has been processed successfully.",
+          });
+        } else if (loanApp.status === "rejected") {
+          clearInterval(pollInterval);
+          toast({
+            title: "Payment Cancelled",
+            description: "The payment was cancelled or failed.",
+            variant: "destructive",
+          });
+        }
+      }, 3000); // Poll every 3 seconds
+
+      // Stop polling after 2 minutes
       setTimeout(() => {
-        setCurrentStep(4);
-        localStorage.removeItem("loanApplication");
-        toast({
-          title: "Payment Successful!",
-          description: "Your loan has been processed successfully.",
-        });
-      }, 3000);
-    } catch (error) {
+        clearInterval(pollInterval);
+      }, 120000);
+    } catch (error: any) {
+      console.error("Payment error:", error);
       toast({
         title: "Payment Failed",
-        description: "There was an error processing your payment. Please try again.",
+        description: error.message || "There was an error processing your payment. Please try again.",
         variant: "destructive",
       });
     }
