@@ -24,24 +24,34 @@ async function getMpesaToken(): Promise<string> {
   const auth = btoa(`${consumerKey}:${consumerSecret}`);
   
   console.log("Requesting M-Pesa OAuth token...");
+  console.log("Using consumer key (first 10 chars):", consumerKey.substring(0, 10) + "...");
   
   const response = await fetch(
     "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
     {
+      method: "GET",
       headers: {
-        Authorization: `Basic ${auth}`,
+        "Authorization": `Basic ${auth}`,
+        "Content-Type": "application/json",
       },
     }
   );
 
   if (!response.ok) {
     const error = await response.text();
-    console.error("OAuth token error:", error);
+    console.error("OAuth token error response:", error);
+    console.error("OAuth status:", response.status);
     throw new Error(`Failed to get M-Pesa token: ${error}`);
   }
 
   const data = await response.json();
   console.log("OAuth token obtained successfully");
+  console.log("Token (first 20 chars):", data.access_token?.substring(0, 20) + "...");
+  
+  if (!data.access_token) {
+    throw new Error("No access token in response");
+  }
+  
   return data.access_token;
 }
 
@@ -100,17 +110,19 @@ async function initiateSTKPush(
     TransactionDesc: "Xangloans Application Fee",
   };
 
-  console.log("Initiating STK Push with payload:", {
-    ...payload,
-    Password: "***REDACTED***",
-  });
+  console.log("Initiating STK Push...");
+  console.log("Shortcode:", shortcode);
+  console.log("Phone:", formattedPhone);
+  console.log("Amount:", Math.round(amount));
+  console.log("Timestamp:", timestamp);
+  console.log("Token (first 20 chars):", token.substring(0, 20) + "...");
 
   const response = await fetch(
     "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        "Authorization": `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
@@ -118,13 +130,25 @@ async function initiateSTKPush(
   );
 
   const data = await response.json();
+  console.log("STK Push response status:", response.status);
+  console.log("STK Push response:", JSON.stringify(data));
   
-  if (!response.ok) {
-    console.error("STK Push error:", data);
-    throw new Error(data.errorMessage || "Failed to initiate payment");
+  if (!response.ok || data.errorCode) {
+    console.error("STK Push failed");
+    console.error("Error code:", data.errorCode);
+    console.error("Error message:", data.errorMessage);
+    
+    // Provide more helpful error messages
+    let errorMsg = data.errorMessage || "Failed to initiate payment";
+    if (data.errorCode === "404.001.03") {
+      errorMsg = "Invalid M-Pesa credentials. Please verify your Consumer Key, Consumer Secret, and Shortcode match and are for the same app.";
+    }
+    
+    throw new Error(errorMsg);
   }
 
-  console.log("STK Push initiated successfully:", data);
+  console.log("STK Push initiated successfully");
+  console.log("CheckoutRequestID:", data.CheckoutRequestID);
   return data;
 }
 
